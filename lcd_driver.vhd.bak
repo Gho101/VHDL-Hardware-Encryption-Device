@@ -1,0 +1,184 @@
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity lcd_driver is
+    port (
+        clk        : in  std_logic;  -- 50 MHz
+        reset      : in  std_logic;
+
+        data_in    : in  std_logic_vector(7 downto 0);
+        write_en   : in  std_logic;  -- pulse to write a character
+        busy       : out std_logic;
+
+        lcd_rs     : out std_logic;
+        lcd_e      : out std_logic;
+        lcd_data   : out std_logic_vector(3 downto 0)
+    );
+end lcd_driver;
+
+architecture rtl of lcd_driver is
+
+    --------------------------------------------------------------------
+    -- LCD timing constants (50 MHz clock)
+    --------------------------------------------------------------------
+    constant CYCLES_40US  : integer := 2000;      -- 40 us
+    constant CYCLES_2MS   : integer := 100000;    -- 2 ms
+    constant CYCLES_5MS   : integer := 250000;    -- 5 ms
+    constant CYCLES_15MS  : integer := 750000;    -- 15 ms
+
+    --------------------------------------------------------------------
+    -- FSM states
+    --------------------------------------------------------------------
+    type state_type is (
+        init_wait,
+        init_1, init_2, init_3,
+        init_4bit,
+        idle,
+        send_high,
+        pulse_high,
+        wait_high,
+        send_low,
+        pulse_low,
+        wait_low
+    );
+
+    signal state : state_type := init_wait;
+
+    --------------------------------------------------------------------
+    -- Internal signals
+    --------------------------------------------------------------------
+    signal counter : integer := 0;
+    signal rs_reg  : std_logic := '0';
+    signal e_reg   : std_logic := '0';
+    signal data_reg : std_logic_vector(3 downto 0) := (others => '0');
+
+    signal data_latched : std_logic_vector(7 downto 0);
+
+begin
+
+    lcd_rs   <= rs_reg;
+    lcd_e    <= e_reg;
+    lcd_data <= data_reg;
+
+    busy <= '1' when state /= idle else '0';
+
+    --------------------------------------------------------------------
+    -- Main FSM
+    --------------------------------------------------------------------
+    process(clk)
+    begin
+        if rising_edge(clk) then
+
+            if reset = '1' then
+                state   <= init_wait;
+                counter <= 0;
+                rs_reg  <= '0';
+                e_reg   <= '0';
+
+            else
+                case state is
+
+                    ----------------------------------------------------------------
+                    -- Initial power‑on wait (15 ms)
+                    ----------------------------------------------------------------
+                    when init_wait =>
+                        if counter < CYCLES_15MS then
+                            counter <= counter + 1;
+                        else
+                            counter <= 0;
+                            state <= init_1;
+                        end if;
+
+                    ----------------------------------------------------------------
+                    -- Initialization sequence (4‑bit mode)
+                    ----------------------------------------------------------------
+                    when init_1 =>
+                        data_reg <= "0011";  -- Function set (8‑bit)
+                        e_reg <= '1';
+                        state <= init_2;
+
+                    when init_2 =>
+                        e_reg <= '0';
+                        if counter < CYCLES_5MS then
+                            counter <= counter + 1;
+                        else
+                            counter <= 0;
+                            state <= init_3;
+                        end if;
+
+                    when init_3 =>
+                        data_reg <= "0011";
+                        e_reg <= '1';
+                        state <= init_4bit;
+
+                    when init_4bit =>
+                        e_reg <= '0';
+                        if counter < CYCLES_40US then
+                            counter <= counter + 1;
+                        else
+                            counter <= 0;
+                            data_reg <= "0010"; -- Switch to 4‑bit mode
+                            e_reg <= '1';
+                            state <= idle;
+                        end if;
+
+                    ----------------------------------------------------------------
+                    -- Idle: wait for a write request
+                    ----------------------------------------------------------------
+                    when idle =>
+                        e_reg <= '0';
+                        if write_en = '1' then
+                            data_latched <= data_in;
+                            rs_reg <= '1';  -- writing data (not command)
+                            state <= send_high;
+                        end if;
+
+                    ----------------------------------------------------------------
+                    -- Send high nibble
+                    ----------------------------------------------------------------
+                    when send_high =>
+                        data_reg <= data_latched(7 downto 4);
+                        e_reg <= '1';
+                        state <= pulse_high;
+
+                    when pulse_high =>
+                        e_reg <= '0';
+                        counter <= 0;
+                        state <= wait_high;
+
+                    when wait_high =>
+                        if counter < CYCLES_40US then
+                            counter <= counter + 1;
+                        else
+                            counter <= 0;
+                            state <= send_low;
+                        end if;
+
+                    ----------------------------------------------------------------
+                    -- Send low nibble
+                    ----------------------------------------------------------------
+                    when send_low =>
+                        data_reg <= data_latched(3 downto 0);
+                        e_reg <= '1';
+                        state <= pulse_low;
+
+                    when pulse_low =>
+                        e_reg <= '0';
+                        counter <= 0;
+                        state <= wait_low;
+
+                    when wait_low =>
+                        if counter < CYCLES_40US then
+                            counter <= counter + 1;
+                        else
+                            counter <= 0;
+                            state <= idle;
+                        end if;
+
+                end case;
+            end if;
+        end if;
+    end process;
+
+end rtl;

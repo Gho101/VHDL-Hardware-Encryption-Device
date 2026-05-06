@@ -1,0 +1,215 @@
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity top_encryption_demo is
+    port (
+        clk_50   : in  std_logic;
+        key0_n   : in  std_logic;      -- active-low button
+        uart_tx  : out std_logic
+    );
+end top_encryption_demo;
+
+architecture behavioral of top_encryption_demo is
+
+    --------------------------------------------------------------------
+    -- Message storage
+    --------------------------------------------------------------------
+    constant MSG_LEN : integer := 11;
+
+    type msg_array is array (0 to MSG_LEN-1) of std_logic_vector(7 downto 0);
+
+    constant PLAINTEXT_INIT : msg_array := (
+        x"48", -- H
+        x"45", -- E
+        x"4C", -- L
+        x"4C", -- L
+        x"4F", -- O
+        x"20", -- space
+        x"57", -- W
+        x"4F", -- O
+        x"52", -- R
+        x"4C", -- L
+        x"44"  -- D
+    );
+
+    signal plaintext  : msg_array := PLAINTEXT_INIT;
+    signal ciphertext : msg_array := (others => (others => '0'));
+    signal decrypted  : msg_array := (others => (others => '0'));
+
+    -- Flattened buses for encrypt_core
+    signal plaintext_flat  : std_logic_vector(8*MSG_LEN-1 downto 0);
+    signal ciphertext_flat : std_logic_vector(8*MSG_LEN-1 downto 0);
+
+    --------------------------------------------------------------------
+    -- State machine for mode
+    --------------------------------------------------------------------
+    type mode_type is (SHOW_PLAIN, SHOW_ENCRYPT, SHOW_DECRYPT);
+    signal mode      : mode_type := SHOW_PLAIN;
+
+    signal key0_sync1, key0_sync2 : std_logic := '1';
+    signal key0_last              : std_logic := '1';
+
+    --------------------------------------------------------------------
+    -- UART interface
+    --------------------------------------------------------------------
+    signal uart_start : std_logic := '0';
+    signal uart_busy  : std_logic;
+    signal uart_data  : std_logic_vector(7 downto 0) := (others => '0');
+
+    component work.uart_tx
+        port (
+            clk     : in  std_logic;
+            start   : in  std_logic;
+            data_in : in  std_logic_vector(7 downto 0);
+            tx      : out std_logic;
+            busy    : out std_logic
+        );
+    end component;
+
+    --------------------------------------------------------------------
+    -- Message send control
+    --------------------------------------------------------------------
+    type send_state_type is (IDLE, SEND_STX, SEND_BODY, SEND_ETX, WAIT_GAP);
+    signal send_state : send_state_type := IDLE;
+
+    signal index      : integer range 0 to MSG_LEN := 0;
+
+    constant STX : std_logic_vector(7 downto 0) := x"02";
+    constant ETX : std_logic_vector(7 downto 0) := x"03";
+
+    -- Gap between full messages (for readability)
+    signal gap_counter : integer := 0;
+    constant GAP_MAX   : integer := 25_000_000; -- ~0.5s at 50MHz
+
+begin
+
+    --------------------------------------------------------------------
+    -- Flatten plaintext for encrypt_core
+    --------------------------------------------------------------------
+    gen_flatten : for i in 0 to MSG_LEN-1 generate
+        plaintext_flat(8*i+7 downto 8*i) <= plaintext(i);
+    end generate;
+
+    --------------------------------------------------------------------
+    -- Encryption core (plaintext -> ciphertext_flat)
+    --------------------------------------------------------------------
+    enc_inst : entity work.encrypt_core
+        generic map (
+            MSG_LEN => MSG_LEN
+        )
+        port map (
+            plaintext  => plaintext_flat,
+            ciphertext => ciphertext_flat
+        );
+
+    -- Unflatten ciphertext_flat into ciphertext array
+    gen_unflatten : for i in 0 to MSG_LEN-1 generate
+        ciphertext(i) <= ciphertext_flat(8*i+7 downto 8*i);
+    end generate;
+
+    --------------------------------------------------------------------
+    -- Decryption (same XOR key) : ciphertext -> decrypted
+    --------------------------------------------------------------------
+    gen_decrypt : for i in 0 to MSG_LEN-1 generate
+        decrypted(i) <= ciphertext(i) xor x"55";
+    end generate;
+
+    --------------------------------------------------------------------
+    -- UART instance
+    --------------------------------------------------------------------
+    uart_inst : uart_tx
+        port map (
+            clk     => clk_50,
+            start   => uart_start,
+            data_in => uart_data,
+            tx      => uart_tx,
+            busy    => uart_busy
+        );
+
+    --------------------------------------------------------------------
+    -- KEY0 sync + edge detect (active-low button)
+    --------------------------------------------------------------------
+    process(clk_50)
+    begin
+        if rising_edge(clk_50) then
+            key0_sync1 <= key0_n;
+            key0_sync2 <= key0_sync1;
+        end if;
+    end process;
+
+    process(clk_50)
+    begin
+        if rising_edge(clk_50) then
+            -- Detect falling edge (press)
+            if key0_sync2 = '0' and key0_last = '1' then
+                case mode is
+                    when SHOW_PLAIN   => mode <= SHOW_ENCRYPT;
+                    when SHOW_ENCRYPT => mode <= SHOW_DECRYPT;
+                    when SHOW_DECRYPT => mode <= SHOW_PLAIN;
+                end case;
+            end if;
+            key0_last <= key0_sync2;
+        end if;
+    end process;
+
+    --------------------------------------------------------------------
+    -- Message send FSM: STX, body, ETX, gap
+    --------------------------------------------------------------------
+    process(clk_50)
+    begin
+        if rising_edge(clk_50) then
+
+            uart_start <= '0';  -- default
+
+            case send_state is
+
+                when IDLE =>
+                    index      <= 0;
+                    gap_counter <= 0;
+                    send_state <= SEND_STX;
+
+                when SEND_STX =>
+                    if uart_busy = '0' then
+                        uart_data  <= STX;
+                        uart_start <= '1';
+                        send_state <= SEND_BODY;
+                        index      <= 0;
+                    end if;
+
+                when SEND_BODY =>
+                    if uart_busy = '0' then
+                        if index < MSG_LEN then
+                            case mode is
+                                when SHOW_PLAIN   => uart_data <= plaintext(index);
+                                when SHOW_ENCRYPT => uart_data <= ciphertext(index);
+                                when SHOW_DECRYPT => uart_data <= decrypted(index);
+                            end case;
+                            uart_start <= '1';
+                            index      <= index + 1;
+                        else
+                            send_state <= SEND_ETX;
+                        end if;
+                    end if;
+
+                when SEND_ETX =>
+                    if uart_busy = '0' then
+                        uart_data  <= ETX;
+                        uart_start <= '1';
+                        send_state <= WAIT_GAP;
+                    end if;
+
+                when WAIT_GAP =>
+                    if gap_counter < GAP_MAX then
+                        gap_counter <= gap_counter + 1;
+                    else
+                        gap_counter <= 0;
+                        send_state  <= SEND_STX;
+                    end if;
+
+            end case;
+
+        end if;
+    end process;
+
+end behavioral;

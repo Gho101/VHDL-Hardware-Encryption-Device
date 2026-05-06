@@ -1,0 +1,193 @@
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity lcd_simple is
+    port (
+        clk       : in  std_logic;   -- 50 MHz
+        reset_n   : in  std_logic;
+
+        lcd_rs    : out std_logic;
+        lcd_e     : out std_logic;
+        lcd_data  : out std_logic_vector(3 downto 0)
+    );
+end lcd_simple;
+
+architecture rtl of lcd_simple is
+
+    signal reset : std_logic;
+
+    -- delays
+    constant T_15MS  : integer := 750000;
+    constant T_5MS   : integer := 250000;
+    constant T_100US : integer := 5000;
+    constant T_40US  : integer := 2000;
+    constant T_EN    : integer := 50;  -- 1 us pulse
+
+    signal counter : integer := 0;
+    signal step    : integer := 0;
+
+    signal rs_reg  : std_logic := '0';
+    signal e_reg   : std_logic := '0';
+    signal d_reg   : std_logic_vector(3 downto 0) := (others => '0');
+
+begin
+
+    lcd_rs   <= rs_reg;
+    lcd_e    <= e_reg;
+    lcd_data <= d_reg;
+
+    reset <= not reset_n;
+
+    process(clk)
+    begin
+        if rising_edge(clk) then
+
+            if reset = '1' then
+                step <= 0;
+                counter <= 0;
+                e_reg <= '0';
+                rs_reg <= '0';
+
+            else
+                case step is
+
+                    ----------------------------------------------------------------
+                    -- 1) Wait 15 ms after power-up
+                    ----------------------------------------------------------------
+                    when 0 =>
+                        if counter < T_15MS then
+                            counter <= counter + 1;
+                        else
+                            counter <= 0;
+                            step <= 1;
+                        end if;
+
+                    ----------------------------------------------------------------
+                    -- 2) Send 0x3 three times (8-bit wake-up)
+                    ----------------------------------------------------------------
+                    when 1 =>
+                        d_reg <= "0011";
+                        e_reg <= '1';
+                        counter <= 0;
+                        step <= 2;
+
+                    when 2 =>
+                        if counter < T_EN then
+                            counter <= counter + 1;
+                        else
+                            e_reg <= '0';
+                            counter <= 0;
+                            step <= 3;
+                        end if;
+
+                    when 3 =>
+                        if counter < T_5MS then
+                            counter <= counter + 1;
+                        else
+                            counter <= 0;
+                            step <= 4;
+                        end if;
+
+                    when 4 =>
+                        d_reg <= "0011";
+                        e_reg <= '1';
+                        counter <= 0;
+                        step <= 5;
+
+                    when 5 =>
+                        if counter < T_EN then
+                            counter <= counter + 1;
+                        else
+                            e_reg <= '0';
+                            counter <= 0;
+                            step <= 6;
+                        end if;
+
+                    when 6 =>
+                        if counter < T_100US then
+                            counter <= counter + 1;
+                        else
+                            counter <= 0;
+                            step <= 7;
+                        end if;
+
+                    when 7 =>
+                        d_reg <= "0011";
+                        e_reg <= '1';
+                        counter <= 0;
+                        step <= 8;
+
+                    when 8 =>
+                        if counter < T_EN then
+                            counter <= counter + 1;
+                        else
+                            e_reg <= '0';
+                            counter <= 0;
+                            step <= 9;
+                        end if;
+
+                    ----------------------------------------------------------------
+                    -- 3) Switch to 4-bit mode (0x2)
+                    ----------------------------------------------------------------
+                    when 9 =>
+                        d_reg <= "0010";
+                        e_reg <= '1';
+                        counter <= 0;
+                        step <= 10;
+
+                    when 10 =>
+                        if counter < T_EN then
+                            counter <= counter + 1;
+                        else
+                            e_reg <= '0';
+                            counter <= 0;
+                            step <= 11;
+                        end if;
+
+                    ----------------------------------------------------------------
+                    -- 4) Send "H"
+                    ----------------------------------------------------------------
+                    when 11 =>
+                        rs_reg <= '1';
+                        d_reg <= "0100";  -- 'H' high nibble (0x48)
+                        e_reg <= '1';
+                        counter <= 0;
+                        step <= 12;
+
+                    when 12 =>
+                        if counter < T_EN then
+                            counter <= counter + 1;
+                        else
+                            e_reg <= '0';
+                            counter <= 0;
+                            step <= 13;
+                        end if;
+
+                    when 13 =>
+                        d_reg <= "1000";  -- 'H' low nibble
+                        e_reg <= '1';
+                        counter <= 0;
+                        step <= 14;
+
+                    when 14 =>
+                        if counter < T_EN then
+                            counter <= counter + 1;
+                        else
+                            e_reg <= '0';
+                            counter <= 0;
+                            step <= 15;
+                        end if;
+
+                    ----------------------------------------------------------------
+                    -- STOP HERE (you should see "H")
+                    ----------------------------------------------------------------
+                    when others =>
+                        null;
+
+                end case;
+            end if;
+        end if;
+    end process;
+
+end rtl;

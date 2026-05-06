@@ -1,0 +1,21 @@
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity top is
+    port (
+        clk    : in  std_logic;
+        uart_tx_pin : out std_logic
+    );
+end top;
+
+architecture behavioral of top is
+
+begin
+
+    uart_inst : entity work.uart_tx
+        port map (
+            clk => clk,
+            tx  => uart_tx_pin
+        );
+
+end behavioral;

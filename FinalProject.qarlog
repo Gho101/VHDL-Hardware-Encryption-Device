@@ -1,0 +1,23 @@
+Quartus Prime Archive log --	C:/Users/Steve/Documents/Spring 2026/LogicProgramming/finalproject/FinalProject.qarlog
+
+Archive:	C:/Users/Steve/Documents/Spring 2026/LogicProgramming/finalproject/FinalProject.qar
+Date:		Thu Apr 30 01:44:22 2026
+Quartus Prime		18.1.0 Build 625 09/12/2018 SJ Lite Edition
+
+	=========== Files Selected: ===========
+C:/Users/Steve/Documents/Spring 2026/LogicProgramming/finalproject/FinalProject.bdf
+C:/Users/Steve/Documents/Spring 2026/LogicProgramming/finalproject/FinalProject.qpf
+C:/Users/Steve/Documents/Spring 2026/LogicProgramming/finalproject/FinalProject.qsf
+C:/Users/Steve/Documents/Spring 2026/LogicProgramming/finalproject/Waveform.vwf
+C:/Users/Steve/Documents/Spring 2026/LogicProgramming/finalproject/decrypt_core.vhd
+C:/Users/Steve/Documents/Spring 2026/LogicProgramming/finalproject/encrypt_core.vhd
+C:/Users/Steve/Documents/Spring 2026/LogicProgramming/finalproject/top_encryption_demo.vhd
+C:/Users/Steve/Documents/Spring 2026/LogicProgramming/finalproject/top_uart.vhd
+C:/Users/Steve/Documents/Spring 2026/LogicProgramming/finalproject/types_pkg.vhd
+C:/Users/Steve/Documents/Spring 2026/LogicProgramming/finalproject/uart_rx.vhd
+C:/Users/Steve/Documents/Spring 2026/LogicProgramming/finalproject/uart_tx.vhd
+c:/intelfpga_lite/18.1/quartus/bin64/assignment_defaults.qdf
+	======= Total: 12 files to archive =======
+
+	================ Status: ===============
+All files archived successfully.

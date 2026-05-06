@@ -1,0 +1,67 @@
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+use work.types_pkg.all;   -- buffer_t
+
+entity decrypt_core is
+    port (
+        clk      : in  std_logic;
+        reset_n  : in  std_logic;
+
+        start    : in  std_logic;   -- pulse to begin decryption
+        done     : out std_logic;   -- goes high for 1 cycle when finished
+
+        len      : in  integer range 0 to 64;
+
+        din      : in  buffer_t;    -- encrypted input buffer
+        dout     : out buffer_t     -- decrypted output buffer
+    );
+end decrypt_core;
+
+architecture behavioral of decrypt_core is
+
+    signal index     : integer range 0 to 64 := 0;
+    signal busy      : std_logic := '0';
+    signal done_reg  : std_logic := '0';
+
+    constant KEY : std_logic_vector(7 downto 0) := x"03";  -- same XOR key
+
+begin
+
+    done <= done_reg;
+
+    process(clk, reset_n)
+    begin
+        if reset_n = '0' then
+            index    <= 0;
+            busy     <= '0';
+            done_reg <= '0';
+
+        elsif rising_edge(clk) then
+            done_reg <= '0';
+
+            ----------------------------------------------------------------
+            -- Start decryption
+            ----------------------------------------------------------------
+            if start = '1' and busy = '0' then
+                index <= 0;
+                busy  <= '1';
+            end if;
+
+            ----------------------------------------------------------------
+            -- Decryption loop: 1 byte per clock
+            ----------------------------------------------------------------
+            if busy = '1' then
+                if index < len then
+                    dout(index) <= din(index) xor KEY;  -- XOR decrypt
+                    index <= index + 1;
+                else
+                    busy     <= '0';
+                    done_reg <= '1';
+                end if;
+            end if;
+
+        end if;
+    end process;
+
+end behavioral;

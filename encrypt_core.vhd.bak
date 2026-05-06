@@ -1,0 +1,27 @@
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity encrypt_core is
+    generic (
+        MSG_LEN : integer := 11
+    );
+    port (
+        plaintext  : in  std_logic_vector(8*MSG_LEN-1 downto 0);
+        ciphertext : out std_logic_vector(8*MSG_LEN-1 downto 0)
+    );
+end encrypt_core;
+
+architecture behavioral of encrypt_core is
+    constant KEY : std_logic_vector(7 downto 0) := x"55";
+begin
+
+    process(plaintext)
+    begin
+        for i in 0 to MSG_LEN-1 loop
+            ciphertext(8*i+7 downto 8*i) <=
+                plaintext(8*i+7 downto 8*i) xor KEY;
+        end loop;
+    end process;
+	 
+end behavioral;
