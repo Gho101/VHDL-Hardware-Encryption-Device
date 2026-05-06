@@ -17,4 +17,6 @@ the MEGA and then send it back to the MEGA to display it on the LCD.
 
 A small note is that the S-box was built more like a demo and not a full fledge S-box. 
 There is a bug that when "m" is within the the input data and after the encryption/decryption
-the output is is not "m" but is "!".
+the output is is not "m" but is "!". 
+
+The main top file is top_encryption_demo.vhd.
